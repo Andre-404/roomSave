@@ -1,5 +1,5 @@
 if(SAVE_ROOMS){
-	FilterRoom(room, roomData);
+	SaveRoom(room, roomData);
 	if(room_exists(room_next(room)) && !done) room_goto_next();
 	else if(!done){
 		done = true;

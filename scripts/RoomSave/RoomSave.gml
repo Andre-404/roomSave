@@ -9,9 +9,10 @@ function RoomSave(roomIndex, mainStruct){
 		var lS = {};
 		var name = layer_get_name(lID);
 		var lElementArr = layer_get_all_elements(lID);
-		//if this layer has no elements we don't save it
+		//if this layer has no elements we don't save it, this can be changed with the SAVE_EMPTY_LAYERS macro
 		var lType = array_length(lElementArr) > 0 || SAVE_EMPTY_LAYERS ? layer_get_element_type(lElementArr[0]) : -1;
 		if(lType == -1) continue;
+		//we check the flags to see if the user has manually decided to not save a particular asset type
 		switch(lType){
 			case layerelementtype_background:
 				if(SAVE_FLAGS & RoomSaveFlag.background) RoomSaveBackground(lID,lElementArr, lS); break;
@@ -25,7 +26,7 @@ function RoomSave(roomIndex, mainStruct){
 				if(SAVE_FLAGS & RoomSaveFlag.tile) RoomSaveTilemap(lID, lElementArr, lS); break;
 			
 		}
-		if(!variable_struct_exists(lS, "type")) continue;
+		if(!variable_struct_exists(lS, "type")) continue; //if this layer is of a asset type that's not supported, we don't save it
 		lS.name = name;
 		lS.depth = layer_get_depth(lID);
 		array_push(lArr, lS);
@@ -41,6 +42,7 @@ function RoomSave(roomIndex, mainStruct){
 
 function RoomSaveObjects(lID, lElArr, struct){
 	var arr = [];
+	//loops over every object, saving it
 	for(var i = 0; i < array_length(lElArr); i++){
 		var s = new SaveObject(arr, layer_instance_get_instance(lElArr[i]));
 	}
@@ -49,11 +51,14 @@ function RoomSaveObjects(lID, lElArr, struct){
 }
 
 function SaveObject(arr, oID) constructor {
+	//here you can play around with which variables you want to save, 
+	//since the saver object has to visit the room in order to save it, all object will run their create event
 	x = oID.x;
 	y = oID.y;
 	scaleX = oID.image_xscale;
 	scaleY = oID.image_yscale;
 	name = GetObjectName(oID.object_index);
+	//you might not want to save persistent objects(like the saver)
 	if(SAVE_PERSISTENT_OBJECTS){
 		array_push(arr, self);
 	}else{
@@ -62,6 +67,8 @@ function SaveObject(arr, oID) constructor {
 }
 
 function RoomSaveTilemap(lID, lElArr, struct){
+	//loops over every tile in the layer and saves it's value, this value can be used for
+	//any layer that has the same tileset(even in other projects!)
 	struct.type = "TileLayer";
 	var tm = layer_tilemap_get_id(lID);
 	var tsn = tileset_get_name(tilemap_get_tileset(tm));
@@ -93,6 +100,7 @@ function RoomSaveSprites(lID, lElArr, struct){
 }
 
 function SaveSprite(sID) constructor {
+	//saves the most basic information about the sprite, can be modified to save anything
 	name = sprite_get_name(sID);
 	x = layer_sprite_get_x(sID);
 	y = layer_sprite_get_y(sID);
@@ -101,6 +109,7 @@ function SaveSprite(sID) constructor {
 }
 
 function RoomSaveBackground(lID, lElArr, struct){
+	//saves the background and it's properties, can be modified to suit your needs
 	var bgID = layer_background_get_id(lID);
 	var bgB = layer_background_get_blend(bgID);
 	var bgS = layer_background_get_sprite(bgID) != -1 ? sprite_get_name(layer_background_get_sprite(bgID)) : -1;
@@ -127,6 +136,7 @@ function RoomLoad(struct, _x, _y){
 
 function RoomLoadLayers(lArr, _x, _y){
 	var l = array_length(lArr);
+	//loops over every layer inside the room struct
 	for(var i = 0; i < l; i++){
 		RoomLoadAddLayer(lArr[i], _x, _y);
 	}
@@ -136,10 +146,12 @@ function RoomLoadAddLayer(lStruct, _x, _y){
 	var lType = lStruct.type;
 	var lName = lStruct.name;
 	var lDepth = lStruct.depth;
+	//if the layer we're trying to create already exists
 	var lCheckID = layer_get_id(lName);
 	if(lCheckID == -1) var lID = layer_create(lDepth, lName);
 	else var lID = lCheckID;
 	
+	//uses the flags to see if the user has disabled any of the assets from being loaded
 	switch(lType){
 		case "InstanceLayer":
 			if(LOAD_FLAGS & RoomSaveFlag.object) 
@@ -158,36 +170,39 @@ function RoomLoadAddLayer(lStruct, _x, _y){
 }
 
 function RoomLoadObjects(elArr, lID, _x, _y){
+	//loops over every instance in the layer
 	var l = array_length(elArr);
 	for(var i = 0; i < l; i++){
 		var oS = elArr[i];
+		var oName = oS.name;
+		//the name of the dummy object that was saved MUST match the name of the actual object you wish to create
+		//otherwise this doesn't work
+		var oID = asset_get_index(oName);
+		if(oID == -1) show_message("Object: " + oName + " doesn't exists");
+		var obj = instance_create_layer(0, 0, lID, oID);
+		//here we load all the variables we saved 
+		//you need to do this for every variable you save
 		var oSx = oS.scaleX;
 		var oSy = oS.scaleY;
 		var oX = oS.x;
 		var oY = oS.y;
-		var oName = oS.name;
-		var oID = asset_get_index(oName);
-		if(oID == -1) show_message("Object: " + oName + " doesn't exists");
-		var obj = instance_create_layer(0, 0, lID, oID);
+		
 		obj.x = oX + _x;
 		obj.y = oY + _y;
 		obj.image_xscale = oSx;
 		obj.image_yscale = oSy;
-		if(oS.isLight){
-			obj.col = oS.color;
-			obj.xScale = oS.xScale;
-			obj.yScale = oS.yScale;
-		}
 	}
 }
 	
 function RoomLoadTilemap(tstS, tN, lID, cw, ch, _x, _y){
+	//adds a tilemap to the layer(if check in case the user created the layer manually)
 	var tAssetIndex = asset_get_index(tN);
 	if(layer_tilemap_get_id(lID) == -1) {
 		var tID = layer_tilemap_create(lID, 0, 0, tAssetIndex, room_width div cw, room_height div ch);
 	}else{
 		var tID = layer_tilemap_get_id(lID);
 	}
+	//loops over every position in the array and sets the cell to the correct value
 	var tw = tstS.widthCells;
 	var th = tstS.heightCells;
 	var tArr = tstS.tileData;
@@ -201,6 +216,7 @@ function RoomLoadTilemap(tstS, tN, lID, cw, ch, _x, _y){
 	
 function RoomLoadSprites(elArr, lID, _x, _y){
 	for(var i = 0; i < elArr; i++){
+		//here you would add any variable you decied to save with the sprite
 		var sS = elArr[i];
 		var sx = sS.x + _x;
 		var sy = sS.y + _y;
@@ -215,6 +231,7 @@ function RoomLoadSprites(elArr, lID, _x, _y){
 }
 	
 function RoomLoadBackground(bgS, lID, _x, _y){
+	//load the background 
 	var bgID = layer_background_create(lID, (bgS.backgroundSprite != -1 ? asset_get_index(bgS.backgroundSprite) : -1));
 	layer_background_alpha(bgID, bgS.backgroundAlpha);
 	layer_background_blend(bgID, bgS.backgroundBlend);

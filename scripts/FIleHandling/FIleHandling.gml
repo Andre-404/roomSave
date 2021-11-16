@@ -1,6 +1,6 @@
 global.outputFile = "";
 
-function FilterRoom(_room, _mainArr){
+function SaveRoom(_room, _mainArr){
 	var name = room_get_name(_room);
 	writeToFile("Errors while saving room '" + name + "':");
 	try{
